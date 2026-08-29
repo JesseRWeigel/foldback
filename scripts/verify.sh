@@ -63,14 +63,20 @@ OUT=$("$PY" -W ignore::ResourceWarning -m unittest discover -s tests -t . 2>&1)
 RC=$?
 echo "$OUT" | grep -E "^Ran [0-9]+ tests" | sed -E 's/ in [0-9.]+s//' | sed 's/^/   /'
 echo "$OUT" | grep -E "^(OK|FAILED)" | sed 's/^/   /'
+# Kept for the next step rather than running the whole suite a second time just to count it.
+RAN=$(printf '%s' "$OUT" | sed -n 's/^Ran \([0-9]*\) tests.*/\1/p' | head -1)
 check $RC
 
 step "the test count the README claims is the count that exists"
-"$PY" - <<'EOF'
-import re, subprocess, sys
-out = subprocess.run([sys.executable, "-W", "ignore::ResourceWarning", "-m", "unittest",
-                      "discover", "-s", "tests", "-t", "."], capture_output=True, text=True)
-ran = int(re.search(r"^Ran (\d+) tests", out.stderr, re.M).group(1))
+# The count comes from the run above rather than from a second run of the whole suite. That
+# second run cost as much as the first and could only ever agree with it.
+RAN="${RAN:-}" "$PY" - <<'EOF'
+import os, re, sys
+ran = os.environ.get("RAN", "")
+if not ran.isdigit():
+    print("   FAIL the unit test step printed no count, so there is nothing to compare")
+    raise SystemExit(1)
+ran = int(ran)
 text = open("README.md", encoding="utf-8").read()
 claimed = [int(n) for n in re.findall(r"Ran (\d+) tests", text)]
 claimed += [int(n) for n in re.findall(r"(\d+) unit tests", text)]
