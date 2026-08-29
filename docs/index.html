@@ -1,0 +1,1105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aliasing you can hear</title>
+<meta name="description" content="A sine sweep above Nyquist, folding back down, with an anti-alias filter you can switch on.">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f6f5f2;
+  --panel: #ffffff;
+  --ink: #191817;
+  --dim: #5d5a55;
+  --line: #d9d5cd;
+  --hot: #b4341f;
+  --cool: #1f5f7a;
+  --good: #2c6e3f;
+  --grid: #e6e2da;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16171a;
+    --panel: #1e2024;
+    --ink: #e9e7e2;
+    --dim: #9c988f;
+    --line: #33363c;
+    --hot: #e8735a;
+    --cool: #6fc2e0;
+    --good: #7fce97;
+    --grid: #2a2d33;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  padding: 1.5rem 1rem 5rem;
+}
+main { max-width: 54rem; margin: 0 auto; }
+h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); line-height: 1.15; margin: 0 0 .4rem; letter-spacing: -.02em; }
+h2 { font-size: 1.15rem; margin: 2.4rem 0 .6rem; letter-spacing: -.01em; }
+h3 { font-size: .95rem; margin: 1.4rem 0 .4rem; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+p { margin: 0 0 .9rem; max-width: 42rem; }
+.lede { font-size: 1.05rem; color: var(--dim); max-width: 40rem; }
+code, .num { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 1rem 0; }
+.readouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .75rem 1rem; margin: 0; }
+.readout { min-width: 0; }
+.readout dt { font-size: .72rem; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); margin: 0 0 .1rem; }
+.readout dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1.28rem; font-variant-numeric: tabular-nums; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.readout dd small { font-size: .7em; color: var(--dim); font-weight: normal; }
+.heard { color: var(--hot); }
+.controls { display: grid; gap: .9rem; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; min-width: 0; }
+label { font-size: .85rem; color: var(--dim); }
+input[type=range] { flex: 1 1 14rem; min-width: 8rem; accent-color: var(--hot); }
+button, select {
+  font: inherit; font-size: .9rem; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 7px; padding: .4rem .8rem; cursor: pointer;
+  max-width: 100%;
+}
+button:hover, select:hover { border-color: var(--dim); }
+button[aria-pressed=true] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+canvas { display: block; width: 100%; height: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+figure { margin: 1rem 0; }
+figcaption { font-size: .82rem; color: var(--dim); margin-top: .45rem; max-width: 42rem; }
+.scroller { overflow-x: auto; }
+table { border-collapse: collapse; font-size: .85rem; }
+th, td { text-align: right; padding: .28rem .7rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 600; color: var(--dim); font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; }
+.pill { display: inline-block; font-size: .74rem; letter-spacing: .05em; text-transform: uppercase; padding: .12rem .5rem; border-radius: 999px; border: 1px solid currentColor; }
+.pill.above { color: var(--hot); }
+.pill.below { color: var(--good); }
+#selfcheck.pass { color: var(--good); }
+#selfcheck.fail { color: var(--hot); }
+.note { font-size: .85rem; color: var(--dim); }
+footer { margin-top: 3rem; font-size: .82rem; color: var(--dim); border-top: 1px solid var(--line); padding-top: 1rem; }
+a { color: var(--cool); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Aliasing you can hear</h1>
+<p class="lede">Play a sine above half your sample rate and it does not disappear and it does not
+sound high. It comes back down. This page sweeps a tone past that line so you can hear the fold,
+watch it in the spectrum, and then switch on the filter that is supposed to prevent it.</p>
+
+<div class="panel">
+  <dl class="readouts">
+    <div class="readout"><dt>Your sample rate</dt><dd><span id="rate" class="num">unknown</span> <small>Hz</small></dd></div>
+    <div class="readout"><dt>Nyquist</dt><dd><span id="nyq" class="num">unknown</span> <small>Hz</small></dd></div>
+    <div class="readout"><dt>Tone asked for</dt><dd><span id="asked" class="num">440</span> <small>Hz</small></dd></div>
+    <div class="readout"><dt>Tone you hear</dt><dd class="heard"><span id="heard" class="num">440</span> <small>Hz</small></dd></div>
+  </dl>
+  <p class="note" id="ratenote" style="margin:.9rem 0 0">The sample rate is not this page's to
+  choose. It is whatever your device handed the browser, and every number above follows from it.</p>
+</div>
+
+<div class="panel controls">
+  <div class="row">
+    <button id="play" aria-pressed="false">Play</button>
+    <button id="sweep">Sweep up through the fold</button>
+    <span id="engine" class="note"></span>
+  </div>
+  <div class="row">
+    <label for="freq" style="flex:0 0 auto">Frequency</label>
+    <input type="range" id="freq" min="20" max="100" value="440" step="1">
+    <span class="num" id="freqlabel" style="flex:0 0 auto">440 Hz</span>
+    <span class="pill below" id="side">below Nyquist</span>
+  </div>
+  <div class="row">
+    <button id="filter" aria-pressed="false">Anti-alias filter: off</button>
+    <label for="order">Order</label>
+    <select id="order">
+      <option value="2">2 (12 dB/oct)</option>
+      <option value="4" selected>4 (24 dB/oct)</option>
+      <option value="6">6 (36 dB/oct)</option>
+      <option value="8">8 (48 dB/oct)</option>
+    </select>
+    <label for="cutoff">Corner</label>
+    <select id="cutoff">
+      <option value="0.8">0.80 &times; Nyquist</option>
+      <option value="0.9" selected>0.90 &times; Nyquist</option>
+      <option value="0.95">0.95 &times; Nyquist</option>
+    </select>
+    <span class="note" id="atten"></span>
+  </div>
+  <div class="row">
+    <label for="volume" style="flex:0 0 auto">Volume</label>
+    <input type="range" id="volume" min="0" max="100" value="25" step="1">
+    <span class="note">A tone at full level is loud. Start low.</span>
+  </div>
+</div>
+
+<figure>
+  <canvas id="spectrum" width="1080" height="380" role="img"
+    aria-label="Spectrum of the sampled signal, with the predicted alias frequency marked"></canvas>
+  <figcaption>The spectrum of what actually came out of the sampler. The dashed line is where the
+  arithmetic says the tone will land. The dot is where a transform of the samples says it landed.
+  They are computed by two different routes and they sit on top of each other.</figcaption>
+</figure>
+
+<figure>
+  <canvas id="foldmap" width="1080" height="340" role="img"
+    aria-label="Fold map: the frequency you asked for against the frequency you hear"></canvas>
+  <figcaption>Asked for, along the bottom. Heard, up the side. The line leaves the diagonal at
+  Nyquist and turns around, and it turns around again at every multiple of Nyquist after that. The
+  mirror is the whole phenomenon: the shaded strip is one reflection of the band, laid over the
+  one before it.</figcaption>
+</figure>
+
+<h2>The one line the whole page is</h2>
+<p>A sine at frequency <code>f</code>, sampled at rate <code>fs</code>, gives exactly the same
+sequence of numbers as a sine at</p>
+<p style="font-size:1.1rem"><code>alias(f, fs) = |f &minus; round(f / fs) &times; fs|</code></p>
+<p>Write <code>f</code> as <code>k&middot;fs + r</code>, with <code>k = round(f/fs)</code>, so
+<code>r</code> lands between <code>&minus;fs/2</code> and <code>+fs/2</code>. Then
+<code>sin(2&pi;fn/fs) = sin(2&pi;kn + 2&pi;rn/fs)</code>, and since <code>k</code> and
+<code>n</code> are whole numbers, the first term is a whole number of turns and contributes
+nothing. What is left is a sine at <code>r</code>. A negative <code>r</code> is the same tone
+upside down, which is why the absolute value is there and why the fold changes the pitch and
+nothing else.</p>
+
+<h3>The frequencies where the sine vanishes</h3>
+<p>At every whole multiple of <code>fs/2</code> a sine starting at phase zero is sampled exactly on
+its zero crossings, and the recording is silence. Slide to <span class="num" id="degen">Nyquist</span>
+and listen: nothing. That is not a bug in the page and it is not a limit of your hardware. A cosine
+at the same frequency comes out at full level, alternating between +1 and &minus;1. The silence
+belongs to the phase, not to the frequency, and it is the reason every measurement here has to
+know about those points instead of asking for the loudest bin and taking whatever it gets.</p>
+
+<h2>Turning the filter on</h2>
+<p>An anti-alias filter has to sit <em>before</em> the sampler. Once a tone has folded there is
+nothing left in the recording that separates it from a tone that was always down there, so a filter
+applied afterwards removes the alias and the honest signal at that pitch with the same hand.</p>
+<p>Web Audio has no such place, so this page makes one. The tone is generated at eight times your
+sample rate, the filter runs there, and every eighth filtered value is kept. That is a model of
+sampling rather than sampling itself, and it is honest up to four times your sample rate. Above
+that the tone folds inside the model before the filter ever sees it.</p>
+<p>The filter is a Butterworth cascade built from the same second order sections Web Audio's
+<code>BiquadFilterNode</code> uses in lowpass mode. What each order buys, and what it costs, at
+your rate:</p>
+<div class="scroller"><table id="ordertable">
+  <thead><tr><th>Order</th><th>at 1.5 &times; Nyquist</th><th>at 2.5 &times; Nyquist</th><th>at 4 &times; Nyquist</th><th>cost at 0.98 &times; Nyquist</th></tr></thead>
+  <tbody><tr><td colspan="5">measured once the audio engine starts</td></tr></tbody>
+</table></div>
+<p class="note">The last column is the part a checkbox does not tell you. A Butterworth is three
+decibels down at its own corner and keeps falling, so a corner placed below Nyquist takes real
+signal off the top of the band, and a steeper filter takes more of it. There is no order that
+gives a wall at Nyquist and leaves the band underneath untouched, which is why oversampling
+converters exist.</p>
+
+<h2>This page checks itself</h2>
+<p id="selfcheck" class="num">not run yet</p>
+<p class="note">The check renders the tone through the same audio graph you are listening to, into
+an offline context, takes a transform of the result, and compares the peak against the arithmetic
+above and against a table computed in Python before this page was built. Three routes to the same
+number. If they ever disagree the line above turns red and says by how much.</p>
+<div class="scroller"><table id="checktable"><thead><tr>
+  <th>Rate</th><th>Asked</th><th>Formula</th><th>Rendered</th><th>Python</th><th>Off by</th>
+</tr></thead><tbody></tbody></table></div>
+
+<footer>
+  <p>Built for catalog task EDU-034. One file, no libraries, no network. Source and the test suite
+  that checks the arithmetic: <a href="https://github.com/JesseRWeigel/foldback">github.com/JesseRWeigel/foldback</a>.</p>
+</footer>
+
+</main>
+
+<script type="application/json" id="foldback-reference">
+<!-- BEGIN GENERATED REFERENCE -->
+{
+ "alias": {
+  "44100": [
+   [
+    11025.0,
+    11025.0
+   ],
+   [
+    21609.0,
+    21609.0
+   ],
+   [
+    22050.0,
+    22050.0
+   ],
+   [
+    30869.999999999996,
+    13230.000000000004
+   ],
+   [
+    44100.0,
+    0.0
+   ],
+   [
+    57330.0,
+    13230.0
+   ],
+   [
+    66150.0,
+    22050.0
+   ],
+   [
+    81585.0,
+    6615.0
+   ],
+   [
+    116865.0,
+    15435.0
+   ],
+   [
+    156555.0,
+    19845.0
+   ]
+  ],
+  "48000": [
+   [
+    12000.0,
+    12000.0
+   ],
+   [
+    23520.0,
+    23520.0
+   ],
+   [
+    24000.0,
+    24000.0
+   ],
+   [
+    33600.0,
+    14400.0
+   ],
+   [
+    48000.0,
+    0.0
+   ],
+   [
+    62400.0,
+    14400.0
+   ],
+   [
+    72000.0,
+    24000.0
+   ],
+   [
+    88800.0,
+    7200.0
+   ],
+   [
+    127200.0,
+    16800.0
+   ],
+   [
+    170400.0,
+    21600.0
+   ]
+  ]
+ },
+ "attenuation": [
+  {
+   "alias": 11025.0,
+   "db": -9.697089639164137,
+   "frequency": 33075.0,
+   "order": 2,
+   "rate": 44100.0
+  },
+  {
+   "alias": 11025.0,
+   "db": -18.471228477030795,
+   "frequency": 33075.0,
+   "order": 4,
+   "rate": 44100.0
+  },
+  {
+   "alias": 11025.0,
+   "db": -36.81896699316967,
+   "frequency": 33075.0,
+   "order": 8,
+   "rate": 44100.0
+  },
+  {
+   "alias": 11025.0,
+   "db": -38.09110632614257,
+   "frequency": 55125.0,
+   "order": 4,
+   "rate": 44100.0
+  },
+  {
+   "alias": 13230.0,
+   "db": -51.590849653844955,
+   "frequency": 74970.0,
+   "order": 4,
+   "rate": 44100.0
+  },
+  {
+   "alias": 12000.0,
+   "db": -18.471228477030795,
+   "frequency": 36000.0,
+   "order": 4,
+   "rate": 48000.0
+  }
+ ],
+ "note": "computed by foldback/reference.py, not by the page",
+ "warmup": 8192,
+ "window": 8192
+}
+<!-- END GENERATED REFERENCE -->
+</script>
+
+<script id="foldback-core">
+// === FOLDBACK CORE BEGIN ===
+// Everything below is also the source of the AudioWorklet: the page reads this element's own
+// text and hands it to addModule, so there is exactly ONE copy of this arithmetic in the file.
+// It must therefore never touch document, window or any other page object.
+//
+// It is also the block that scripts/parity.js pulls out and runs under node, value by value,
+// against the Python in foldback/. If you change a formula here, change it there.
+const FOLDBACK = (function () {
+  "use strict";
+
+  // ---- the fold ------------------------------------------------------------------------
+  function aliasOf(f, fs) { return Math.abs(f - Math.round(f / fs) * fs); }
+  function foldsBelow(f, fs) { return Math.floor(f / (fs / 2)); }
+  function isDegenerate(f, fs, tolerance) {
+    const half = fs / 2, ratio = f / half;
+    return Math.abs(ratio - Math.round(ratio)) < (tolerance === undefined ? 1e-9 : tolerance);
+  }
+
+  // ---- the filter ----------------------------------------------------------------------
+  function butterworthQs(order) {
+    if (order < 2 || order % 2) throw new Error("order " + order + " is not an even number");
+    const qs = [];
+    for (let k = 0; k < order / 2; k++) {
+      qs.push(1 / (2 * Math.cos((2 * k + 1) * Math.PI / (2 * order))));
+    }
+    return qs;
+  }
+  function lowpassCoefficients(cutoff, rate, q) {
+    if (!(cutoff > 0 && cutoff < rate / 2)) throw new Error("cutoff outside the band");
+    const w0 = 2 * Math.PI * cutoff / rate;
+    const cosine = Math.cos(w0);
+    const alpha = Math.sin(w0) / (2 * q);
+    const a0 = 1 + alpha;
+    return {
+      b0: (1 - cosine) / 2 / a0, b1: (1 - cosine) / a0, b2: (1 - cosine) / 2 / a0,
+      a1: (-2 * cosine) / a0, a2: (1 - alpha) / a0,
+      x1: 0, x2: 0, y1: 0, y2: 0
+    };
+  }
+  function processSection(s, x) {
+    const y = s.b0 * x + s.b1 * s.x1 + s.b2 * s.x2 - s.a1 * s.y1 - s.a2 * s.y2;
+    s.x2 = s.x1; s.x1 = x; s.y2 = s.y1; s.y1 = y;
+    return y;
+  }
+  function makeCascade(order, cutoff, rate) {
+    return {
+      order: order, cutoff: cutoff, rate: rate,
+      sections: butterworthQs(order).map(q => lowpassCoefficients(cutoff, rate, q))
+    };
+  }
+  function resetCascade(c) {
+    for (const s of c.sections) { s.x1 = 0; s.x2 = 0; s.y1 = 0; s.y2 = 0; }
+  }
+  function processCascade(c, x) {
+    for (const s of c.sections) x = processSection(s, x);
+    return x;
+  }
+  function cascadeResponse(c, f) {
+    const angle = -2 * Math.PI * f / c.rate;
+    const zr = Math.cos(angle), zi = Math.sin(angle);
+    const z2r = zr * zr - zi * zi, z2i = 2 * zr * zi;
+    let total = 1;
+    for (const s of c.sections) {
+      const nr = s.b0 + s.b1 * zr + s.b2 * z2r, ni = s.b1 * zi + s.b2 * z2i;
+      const dr = 1 + s.a1 * zr + s.a2 * z2r, di = s.a1 * zi + s.a2 * z2i;
+      total *= Math.sqrt((nr * nr + ni * ni) / (dr * dr + di * di));
+    }
+    return total;
+  }
+  function cascadeResponseDb(c, f) {
+    const m = cascadeResponse(c, f);
+    return m <= 0 ? -Infinity : 20 * Math.log10(m);
+  }
+
+  // ---- the sampler, with a place to put the filter -------------------------------------
+  function makeSampler(options) {
+    const rate = options.sampleRate;
+    const oversample = options.oversample === undefined ? 8 : options.oversample;
+    const fraction = options.cutoffFraction === undefined ? 0.9 : options.cutoffFraction;
+    const state = {
+      sampleRate: rate,
+      oversample: oversample,
+      internalRate: rate * oversample,
+      cutoff: fraction * rate / 2,
+      cutoffFraction: fraction,
+      frequency: options.frequency === undefined ? 440 : options.frequency,
+      amplitude: options.amplitude === undefined ? 1 : options.amplitude,
+      filterOn: !!options.filterOn,
+      phase: options.phase === undefined ? 0 : options.phase,
+      cascade: null
+    };
+    state.cascade = makeCascade(options.order === undefined ? 4 : options.order,
+                                state.cutoff, state.internalRate);
+    return state;
+  }
+  function setCutoffFraction(state, fraction) {
+    state.cutoffFraction = fraction;
+    state.cutoff = fraction * state.sampleRate / 2;
+    state.cascade = makeCascade(state.cascade.order, state.cutoff, state.internalRate);
+  }
+  function setOrder(state, order) {
+    state.cascade = makeCascade(order, state.cutoff, state.internalRate);
+  }
+  function render(state, out, count) {
+    const step = 2 * Math.PI * state.frequency / state.internalRate;
+    const twoPi = 2 * Math.PI;
+    let phase = state.phase;
+    for (let n = 0; n < count; n++) {
+      for (let i = 0; i < state.oversample; i++) {
+        let value = state.amplitude * Math.sin(phase);
+        if (state.filterOn) value = processCascade(state.cascade, value);
+        if (i === 0) out[n] = value;
+        phase += step;
+      }
+      if (phase > twoPi) phase -= twoPi * Math.floor(phase / twoPi);
+    }
+    state.phase = phase;
+    return out;
+  }
+
+  // ---- the spectrum --------------------------------------------------------------------
+  function hann(length) {
+    const w = new Float64Array(length);
+    if (length === 1) { w[0] = 1; return w; }
+    for (let i = 0; i < length; i++) w[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / length);
+    return w;
+  }
+  function fft(re, im) {
+    const n = re.length;
+    if (n === 0 || (n & (n - 1))) throw new Error("length " + n + " is not a power of two");
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j |= bit;
+      if (i < j) {
+        let t = re[i]; re[i] = re[j]; re[j] = t;
+        t = im[i]; im[i] = im[j]; im[j] = t;
+      }
+    }
+    for (let size = 2; size <= n; size <<= 1) {
+      const angle = -2 * Math.PI / size;
+      const wr = Math.cos(angle), wi = Math.sin(angle);
+      const half = size >> 1;
+      for (let start = 0; start < n; start += size) {
+        let cr = 1, ci = 0;
+        for (let offset = 0; offset < half; offset++) {
+          const ar = re[start + offset], ai = im[start + offset];
+          const xr = re[start + offset + half], xi = im[start + offset + half];
+          const br = xr * cr - xi * ci, bi = xr * ci + xi * cr;
+          re[start + offset] = ar + br; im[start + offset] = ai + bi;
+          re[start + offset + half] = ar - br; im[start + offset + half] = ai - bi;
+          const nr = cr * wr - ci * wi;
+          ci = cr * wi + ci * wr; cr = nr;
+        }
+      }
+    }
+  }
+  function magnitudes(values) {
+    const n = values.length;
+    const w = hann(n);
+    const re = new Float64Array(n), im = new Float64Array(n);
+    for (let i = 0; i < n; i++) re[i] = values[i] * w[i];
+    fft(re, im);
+    const out = new Float64Array(n / 2 + 1);
+    for (let i = 0; i < out.length; i++) out[i] = Math.hypot(re[i], im[i]);
+    return out;
+  }
+  function peakOf(values, rate, floorRatio) {
+    const n = values.length;
+    if (n === 0) return null;
+    let loudest = 0;
+    for (let i = 0; i < n; i++) loudest = Math.max(loudest, Math.abs(values[i]));
+    if (loudest < (floorRatio === undefined ? 1e-6 : floorRatio)) return null;
+    const bins = magnitudes(values);
+    let top = 0;
+    for (let i = 1; i < bins.length; i++) if (bins[i] > bins[top]) top = i;
+    if (bins[top] <= 0) return null;
+    const spacing = rate / n;
+    if (top === 0 || top === bins.length - 1) return top * spacing;
+    const left = bins[top - 1], middle = bins[top], right = bins[top + 1];
+    if (left <= 0 || right <= 0) return top * spacing;
+    const a = 20 * Math.log10(left), b = 20 * Math.log10(middle), c = 20 * Math.log10(right);
+    const denominator = a - 2 * b + c;
+    let shift = denominator === 0 ? 0 : 0.5 * (a - c) / denominator;
+    shift = Math.max(-0.5, Math.min(0.5, shift));
+    return (top + shift) * spacing;
+  }
+  function amplitudeAt(values, rate, frequency) {
+    const n = values.length;
+    if (n === 0) throw new Error("nothing to measure");
+    const spacing = rate / n;
+    if (frequency < 4 * spacing || frequency > rate / 2 - 4 * spacing) {
+      throw new Error(frequency.toFixed(3) + " Hz is within four bins of an end of the spectrum");
+    }
+    const w = hann(n);
+    const turn = -2 * Math.PI * frequency / rate;
+    let sr = 0, si = 0, gain = 0;
+    for (let i = 0; i < n; i++) {
+      const angle = turn * i;
+      const v = values[i] * w[i];
+      sr += v * Math.cos(angle);
+      si += v * Math.sin(angle);
+      gain += w[i];
+    }
+    return 2 * Math.hypot(sr, si) / gain;
+  }
+
+  return {
+    aliasOf: aliasOf, foldsBelow: foldsBelow, isDegenerate: isDegenerate,
+    butterworthQs: butterworthQs, lowpassCoefficients: lowpassCoefficients,
+    processSection: processSection, makeCascade: makeCascade, resetCascade: resetCascade,
+    processCascade: processCascade, cascadeResponse: cascadeResponse,
+    cascadeResponseDb: cascadeResponseDb,
+    makeSampler: makeSampler, setOrder: setOrder, setCutoffFraction: setCutoffFraction,
+    render: render,
+    hann: hann, fft: fft, magnitudes: magnitudes, peakOf: peakOf, amplitudeAt: amplitudeAt
+  };
+})();
+// === FOLDBACK CORE END ===
+</script>
+
+<pre id="selfcheck-json" hidden>not run</pre>
+
+<script>
+// The page. Everything below drives the controls, the two canvases and the self check, and none
+// of it is arithmetic: every number shown comes out of FOLDBACK above, which is the block the
+// tests reach. If you are looking for the physics, it is in the script before this one.
+(function () {
+  "use strict";
+
+  const F = FOLDBACK;
+  const params = new URLSearchParams(location.search);
+  const REFERENCE = JSON.parse(
+    document.getElementById("foldback-reference").textContent.replace(/<!--[\s\S]*?-->/g, ""));
+
+  const el = id => document.getElementById(id);
+  const CORE_SOURCE = document.getElementById("foldback-core").textContent;
+
+  const settings = {
+    frequency: 440,
+    amplitude: 0.25,
+    filterOn: false,
+    order: 4,
+    cutoffFraction: 0.9,
+    oversample: 8
+  };
+
+  // ---- the audio engine ------------------------------------------------------------------
+  // Two ways to run a sample loop in a browser, and this page needs both. AudioWorklet is the
+  // supported one and it is what runs when the page is served over http. It cannot run from a
+  // file:// URL, because its module has to be fetched and a blob URL fetch is refused there,
+  // which is measured rather than assumed: scripts/browser_check.py drives the page both ways.
+  // ScriptProcessorNode is deprecated and still present in every current browser, and it needs
+  // no fetch at all, so it is the fallback that makes the page work when opened off a disk.
+  const WORKLET_GLUE = `
+    class FoldbackProcessor extends AudioWorkletProcessor {
+      constructor(options) {
+        super();
+        this.state = FOLDBACK.makeSampler(options.processorOptions);
+        this.scope = new Float32Array(2048);
+        this.filled = 0;
+        this.port.onmessage = event => {
+          const message = event.data;
+          if (message.order !== undefined && message.order !== this.state.cascade.order) {
+            FOLDBACK.setOrder(this.state, message.order);
+          }
+          if (message.cutoffFraction !== undefined &&
+              message.cutoffFraction !== this.state.cutoffFraction) {
+            FOLDBACK.setCutoffFraction(this.state, message.cutoffFraction);
+          }
+          if (message.frequency !== undefined) this.state.frequency = message.frequency;
+          if (message.amplitude !== undefined) this.state.amplitude = message.amplitude;
+          if (message.filterOn !== undefined) this.state.filterOn = message.filterOn;
+        };
+      }
+      process(inputs, outputs) {
+        const channel = outputs[0][0];
+        FOLDBACK.render(this.state, channel, channel.length);
+        for (let i = 0; i < channel.length; i++) {
+          this.scope[this.filled++] = channel[i];
+          if (this.filled === this.scope.length) {
+            this.port.postMessage(this.scope.slice());
+            this.filled = 0;
+          }
+        }
+        return true;
+      }
+    }
+    registerProcessor("foldback", FoldbackProcessor);
+  `;
+
+  let workletUrl = null;
+  function moduleUrl() {
+    if (workletUrl === null) {
+      workletUrl = URL.createObjectURL(
+        new Blob([CORE_SOURCE + "\n" + WORKLET_GLUE], { type: "application/javascript" }));
+    }
+    return workletUrl;
+  }
+
+  async function makeNode(ctx, options, onScope) {
+    const wanted = params.get("engine");
+    if (wanted !== "script") {
+      try {
+        await ctx.audioWorklet.addModule(moduleUrl());
+        const node = new AudioWorkletNode(ctx, "foldback", {
+          numberOfInputs: 0, outputChannelCount: [1], processorOptions: options
+        });
+        node.port.onmessage = event => onScope && onScope(event.data);
+        return { node: node, kind: "AudioWorklet", send: m => node.port.postMessage(m) };
+      } catch (error) {
+        if (wanted === "worklet") throw error;
+      }
+    }
+    if (!ctx.createScriptProcessor) {
+      throw new Error("this browser has neither a usable AudioWorklet nor a ScriptProcessorNode");
+    }
+    const size = 2048;
+    const node = ctx.createScriptProcessor(size, 0, 1);
+    const state = F.makeSampler(options);
+    node.onaudioprocess = event => {
+      const channel = event.outputBuffer.getChannelData(0);
+      F.render(state, channel, channel.length);
+      if (onScope) onScope(channel.slice());
+    };
+    return {
+      node: node, kind: "ScriptProcessorNode",
+      send: m => {
+        if (m.order !== undefined && m.order !== state.cascade.order) F.setOrder(state, m.order);
+        if (m.cutoffFraction !== undefined && m.cutoffFraction !== state.cutoffFraction) {
+          F.setCutoffFraction(state, m.cutoffFraction);
+        }
+        if (m.frequency !== undefined) state.frequency = m.frequency;
+        if (m.amplitude !== undefined) state.amplitude = m.amplitude;
+        if (m.filterOn !== undefined) state.filterOn = m.filterOn;
+      }
+    };
+  }
+
+  // ---- what the page knows before any audio starts ---------------------------------------
+  let sampleRate = 48000;
+  let liveContext = null;
+  try {
+    liveContext = new (window.AudioContext || window.webkitAudioContext)();
+    sampleRate = liveContext.sampleRate;
+  } catch (error) {
+    el("ratenote").textContent =
+      "This browser would not open an audio context, so the numbers below assume 48000 Hz. " +
+      "Nothing here will make a sound: " + error.message;
+  }
+
+  let engine = null;
+  let scope = new Float32Array(2048);
+  let playing = false;
+  let sweeping = 0;
+
+  function nyquist() { return sampleRate / 2; }
+  function top() { return sampleRate * 4; }
+
+  function fmt(value, places) {
+    return value.toLocaleString("en-US", {
+      minimumFractionDigits: places === undefined ? 0 : places,
+      maximumFractionDigits: places === undefined ? 0 : places
+    });
+  }
+
+  // ---- the readouts ----------------------------------------------------------------------
+  function refresh() {
+    const f = settings.frequency;
+    const heard = F.aliasOf(f, sampleRate);
+    el("rate").textContent = fmt(sampleRate);
+    el("nyq").textContent = fmt(nyquist());
+    el("asked").textContent = fmt(f);
+    el("heard").textContent = fmt(heard, 1);
+    el("freqlabel").textContent = fmt(f) + " Hz";
+    el("degen").textContent = fmt(nyquist()) + " Hz";
+    const above = f > nyquist();
+    const side = el("side");
+    side.textContent = above
+      ? "folded " + F.foldsBelow(f, sampleRate) + "×"
+      : "below Nyquist";
+    side.className = "pill " + (above ? "above" : "below");
+    const cascade = F.makeCascade(settings.order, settings.cutoffFraction * nyquist(),
+                                  sampleRate * settings.oversample);
+    el("atten").textContent = settings.filterOn
+      ? "this tone is cut by " + F.cascadeResponseDb(cascade, f).toFixed(1) + " dB before sampling"
+      : "nothing is filtered";
+    if (engine) {
+      engine.send({
+        frequency: settings.frequency, amplitude: settings.amplitude,
+        filterOn: settings.filterOn, order: settings.order,
+        cutoffFraction: settings.cutoffFraction
+      });
+    }
+    draw();
+  }
+
+  function fillOrderTable() {
+    const rows = [];
+    const columns = [1.5, 2.5, 4.0];
+    for (const order of [2, 4, 6, 8]) {
+      const cascade = F.makeCascade(order, settings.cutoffFraction * nyquist(),
+                                    sampleRate * settings.oversample);
+      const cells = columns.map(multiple =>
+        F.cascadeResponseDb(cascade, multiple * nyquist()).toFixed(1) + " dB");
+      cells.push(F.cascadeResponseDb(cascade, 0.98 * nyquist()).toFixed(1) + " dB");
+      rows.push("<tr><td>" + order + "</td><td>" + cells.join("</td><td>") + "</td></tr>");
+    }
+    el("ordertable").querySelector("tbody").innerHTML = rows.join("");
+  }
+
+  // ---- drawing ---------------------------------------------------------------------------
+  function styles() {
+    const read = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return {
+      ink: read("--ink") || "#000", dim: read("--dim") || "#666",
+      hot: read("--hot") || "#c00", cool: read("--cool") || "#06c",
+      grid: read("--grid") || "#eee", panel: read("--panel") || "#fff"
+    };
+  }
+
+  function drawSpectrum() {
+    const canvas = el("spectrum");
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height, s = styles();
+    const padL = 62, padR = 18, padT = 18, padB = 40;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = s.panel; ctx.fillRect(0, 0, w, h);
+    const x = f => padL + (f / nyquist()) * (w - padL - padR);
+    const y = db => padT + (Math.min(0, Math.max(-96, db)) / -96) * (h - padT - padB);
+
+    ctx.strokeStyle = s.grid; ctx.fillStyle = s.dim;
+    ctx.font = "16px ui-monospace, Menlo, Consolas, monospace";
+    ctx.lineWidth = 1;
+    for (let db = 0; db >= -96; db -= 24) {
+      ctx.beginPath(); ctx.moveTo(padL, y(db)); ctx.lineTo(w - padR, y(db)); ctx.stroke();
+      ctx.textAlign = "right"; ctx.fillText(db + " dB", padL - 8, y(db) + 5);
+    }
+    ctx.textAlign = "center";
+    for (let i = 0; i <= 4; i++) {
+      const f = nyquist() * i / 4;
+      ctx.beginPath(); ctx.moveTo(x(f), padT); ctx.lineTo(x(f), h - padB); ctx.stroke();
+      ctx.fillText(Math.round(f / 1000) + "k", x(f), h - padB + 22);
+    }
+
+    const bins = F.magnitudes(scope);
+    let biggest = 1e-12;
+    for (let i = 0; i < bins.length; i++) biggest = Math.max(biggest, bins[i]);
+    ctx.beginPath();
+    ctx.strokeStyle = s.cool; ctx.lineWidth = 2;
+    for (let i = 0; i < bins.length; i++) {
+      const db = 20 * Math.log10(Math.max(bins[i], 1e-9) / biggest);
+      const px = padL + (i / (bins.length - 1)) * (w - padL - padR);
+      if (i === 0) ctx.moveTo(px, y(db)); else ctx.lineTo(px, y(db));
+    }
+    ctx.stroke();
+
+    const predicted = F.aliasOf(settings.frequency, sampleRate);
+    ctx.strokeStyle = s.hot; ctx.setLineDash([7, 6]); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x(predicted), padT); ctx.lineTo(x(predicted), h - padB);
+    ctx.stroke(); ctx.setLineDash([]);
+
+    const measured = F.peakOf(scope, sampleRate);
+    if (measured !== null) {
+      ctx.fillStyle = s.hot;
+      ctx.beginPath(); ctx.arc(x(measured), padT + 14, 7, 0, 2 * Math.PI); ctx.fill();
+    }
+    ctx.fillStyle = s.dim; ctx.textAlign = "left";
+    ctx.fillText(measured === null
+      ? "nothing above the noise floor: the sine is sampled on its zero crossings"
+      : "arithmetic says " + predicted.toFixed(1) + " Hz, the transform says " +
+        measured.toFixed(1) + " Hz", padL + 8, h - padB - 12);
+  }
+
+  function drawFoldMap() {
+    const canvas = el("foldmap");
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height, s = styles();
+    const padL = 62, padR = 18, padT = 18, padB = 40;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = s.panel; ctx.fillRect(0, 0, w, h);
+    const x = f => padL + (f / top()) * (w - padL - padR);
+    const y = f => (h - padB) - (f / nyquist()) * (h - padT - padB);
+
+    // The strip that says "mirror": the second reflection of the band laid over the first.
+    ctx.fillStyle = s.grid;
+    ctx.fillRect(x(nyquist()), padT, x(2 * nyquist()) - x(nyquist()), h - padT - padB);
+
+    ctx.strokeStyle = s.grid; ctx.fillStyle = s.dim; ctx.lineWidth = 1;
+    ctx.font = "16px ui-monospace, Menlo, Consolas, monospace";
+    ctx.textAlign = "center";
+    for (let i = 0; i <= 8; i++) {
+      const f = nyquist() * i;
+      ctx.beginPath(); ctx.moveTo(x(f), padT); ctx.lineTo(x(f), h - padB); ctx.stroke();
+      if (i % 2 === 0) ctx.fillText(i / 2 + "×fs", x(f), h - padB + 22);
+    }
+    ctx.textAlign = "right";
+    ctx.fillText("Nyquist", padL - 8, y(nyquist()) + 5);
+    ctx.fillText("0", padL - 8, y(0) + 5);
+
+    ctx.strokeStyle = s.cool; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    const steps = 900;
+    for (let i = 0; i <= steps; i++) {
+      const f = top() * i / steps;
+      const px = x(f), py = y(F.aliasOf(f, sampleRate));
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    const f = settings.frequency;
+    const heard = F.aliasOf(f, sampleRate);
+    ctx.strokeStyle = s.hot; ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(x(f), h - padB); ctx.lineTo(x(f), y(heard)); ctx.lineTo(padL, y(heard));
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = s.hot;
+    ctx.beginPath(); ctx.arc(x(f), y(heard), 8, 0, 2 * Math.PI); ctx.fill();
+  }
+
+  let drawQueued = false;
+  function draw() {
+    if (drawQueued) return;
+    drawQueued = true;
+    requestAnimationFrame(() => {
+      drawQueued = false;
+      drawSpectrum();
+      drawFoldMap();
+    });
+  }
+
+  // ---- controls --------------------------------------------------------------------------
+  const slider = el("freq");
+  slider.min = 20;
+  slider.max = Math.round(top());
+  slider.step = 1;
+  slider.value = 440;
+
+  slider.addEventListener("input", () => {
+    sweeping = 0;
+    settings.frequency = Number(slider.value);
+    refresh();
+  });
+  el("volume").addEventListener("input", event => {
+    settings.amplitude = Number(event.target.value) / 100;
+    refresh();
+  });
+  el("order").addEventListener("change", event => {
+    settings.order = Number(event.target.value);
+    fillOrderTable();
+    refresh();
+  });
+  el("cutoff").addEventListener("change", event => {
+    settings.cutoffFraction = Number(event.target.value);
+    fillOrderTable();
+    refresh();
+  });
+  el("filter").addEventListener("click", event => {
+    settings.filterOn = !settings.filterOn;
+    event.currentTarget.setAttribute("aria-pressed", String(settings.filterOn));
+    event.currentTarget.textContent = "Anti-alias filter: " + (settings.filterOn ? "on" : "off");
+    refresh();
+  });
+
+  async function start() {
+    if (!liveContext) return;
+    if (!engine) {
+      engine = await makeNode(liveContext, Object.assign({ sampleRate: sampleRate }, settings),
+                              block => { scope = block; draw(); });
+      const gain = liveContext.createGain();
+      gain.gain.value = 1;
+      engine.node.connect(gain).connect(liveContext.destination);
+      el("engine").textContent = "running on " + engine.kind;
+    }
+    await liveContext.resume();
+    playing = true;
+    el("play").textContent = "Stop";
+    el("play").setAttribute("aria-pressed", "true");
+    refresh();
+  }
+
+  async function stop() {
+    if (liveContext) await liveContext.suspend();
+    playing = false;
+    el("play").textContent = "Play";
+    el("play").setAttribute("aria-pressed", "false");
+  }
+
+  el("play").addEventListener("click", () => { playing ? stop() : start(); });
+
+  el("sweep").addEventListener("click", async () => {
+    if (!playing) await start();
+    const began = performance.now();
+    const seconds = 20;
+    const run = now => {
+      if (sweeping !== began) return;
+      const through = Math.min(1, (now - began) / (seconds * 1000));
+      settings.frequency = Math.round(20 + through * (top() - 20));
+      slider.value = settings.frequency;
+      refresh();
+      if (through < 1) requestAnimationFrame(run); else sweeping = 0;
+    };
+    sweeping = began;
+    requestAnimationFrame(run);
+  });
+
+  // ---- the self check --------------------------------------------------------------------
+  // Rendered through the SAME graph the reader is listening to, into an offline context, so this
+  // exercises the audio path and not a copy of the arithmetic sitting beside it.
+  async function renderOffline(rate, frames, options) {
+    const ctx = new OfflineAudioContext(1, frames, rate);
+    const built = await makeNode(ctx, Object.assign({ sampleRate: rate }, options), null);
+    built.node.connect(ctx.destination);
+    const buffer = await ctx.startRendering();
+    return { samples: buffer.getChannelData(0), kind: built.kind };
+  }
+
+  function overflowing() {
+    const bad = [];
+    const width = document.documentElement.clientWidth;
+    for (const node of document.querySelectorAll("body *")) {
+      let scrolls = false;
+      for (let p = node.parentElement; p; p = p.parentElement) {
+        if (getComputedStyle(p).overflowX === "auto" || getComputedStyle(p).overflowX === "scroll") {
+          scrolls = true; break;
+        }
+      }
+      if (scrolls) continue;
+      const box = node.getBoundingClientRect();
+      if (box.width > 0 && box.right > width + 0.5) {
+        bad.push({ tag: node.tagName.toLowerCase(), id: node.id, right: Math.round(box.right) });
+      }
+    }
+    if (document.documentElement.scrollWidth > width + 0.5) {
+      bad.push({ tag: "root", id: "", right: document.documentElement.scrollWidth });
+    }
+    return bad;
+  }
+
+  function ink(canvas) {
+    const ctx = canvas.getContext("2d");
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const r0 = data[0], g0 = data[1], b0 = data[2];
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (Math.abs(data[i] - r0) + Math.abs(data[i + 1] - g0) + Math.abs(data[i + 2] - b0) > 24) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  async function selfCheck() {
+    const result = {
+      ok: true, engine: null, liveSampleRate: liveContext ? liveContext.sampleRate : null,
+      rows: [], filter: [], degenerate: [], errors: [], overflow: [], canvas: {},
+      referenceRates: Object.keys(REFERENCE.alias || {})
+    };
+    const frames = 16384, keep = 8192, warmup = 8192;
+    try {
+      for (const rateText of Object.keys(REFERENCE.alias || {})) {
+        const rate = Number(rateText);
+        for (const pair of REFERENCE.alias[rateText]) {
+          const asked = pair[0], python = pair[1];
+          const rendered = await renderOffline(rate, frames, {
+            frequency: asked, amplitude: 1, filterOn: false, order: 4, cutoffFraction: 0.9
+          });
+          result.engine = rendered.kind;
+          const window_ = rendered.samples.slice(warmup, warmup + keep);
+          const measured = F.peakOf(window_, rate);
+          const formula = F.aliasOf(asked, rate);
+          if (F.isDegenerate(asked, rate)) {
+            let loudest = 0;
+            for (let i = 0; i < window_.length; i++) {
+              loudest = Math.max(loudest, Math.abs(window_[i]));
+            }
+            result.degenerate.push({ rate: rate, asked: asked, loudest: loudest,
+                                     peak: measured });
+            if (measured !== null || loudest > 1e-6) result.ok = false;
+            continue;
+          }
+          const offBy = measured === null ? Infinity : Math.abs(measured - formula);
+          const bin = rate / keep;
+          result.rows.push({ rate: rate, asked: asked, formula: formula,
+                             rendered: measured, python: python, offBy: offBy });
+          if (!(offBy < bin) || Math.abs(formula - python) > 1e-6) result.ok = false;
+        }
+      }
+      for (const entry of REFERENCE.attenuation || []) {
+        const rate = entry.rate, asked = entry.frequency, order = entry.order;
+        const alias = F.aliasOf(asked, rate);
+        const off = await renderOffline(rate, frames, {
+          frequency: asked, amplitude: 1, filterOn: false, order: order, cutoffFraction: 0.9 });
+        const on = await renderOffline(rate, frames, {
+          frequency: asked, amplitude: 1, filterOn: true, order: order, cutoffFraction: 0.9 });
+        const a = F.amplitudeAt(off.samples.slice(warmup, warmup + keep), rate, alias);
+        const b = F.amplitudeAt(on.samples.slice(warmup, warmup + keep), rate, alias);
+        const measured = 20 * Math.log10(b / a);
+        const cascade = F.makeCascade(order, 0.9 * rate / 2, rate * 8);
+        const formula = F.cascadeResponseDb(cascade, asked);
+        result.filter.push({ rate: rate, order: order, asked: asked, alias: alias,
+                             measured: measured, formula: formula, python: entry.db,
+                             offBy: Math.abs(measured - entry.db) });
+        if (Math.abs(measured - entry.db) > 0.5 || Math.abs(formula - entry.db) > 1e-6) {
+          result.ok = false;
+        }
+      }
+    } catch (error) {
+      result.ok = false;
+      result.errors.push(String(error && error.message ? error.message : error));
+    }
+    result.overflow = overflowing();
+    if (result.overflow.length) result.ok = false;
+    result.canvas = { spectrum: ink(el("spectrum")), foldmap: ink(el("foldmap")) };
+    if (result.canvas.spectrum < 2000 || result.canvas.foldmap < 2000) result.ok = false;
+    return result;
+  }
+
+  function showCheck(result) {
+    const line = el("selfcheck");
+    const worst = result.rows.reduce((m, r) => Math.max(m, r.offBy), 0);
+    line.className = "num " + (result.ok ? "pass" : "fail");
+    line.textContent = result.ok
+      ? "PASS. " + result.rows.length + " frequencies rendered through " + result.engine +
+        ", every peak within " + worst.toFixed(2) + " Hz of the formula, " +
+        result.filter.length + " filter measurements within half a decibel of Python, " +
+        result.degenerate.length + " degenerate frequencies silent as predicted."
+      : "FAIL. " + (result.errors.join("; ") || "a measurement disagreed, see the table") +
+        (result.overflow.length ? " " + result.overflow.length + " element(s) overflow." : "");
+    const body = el("checktable").querySelector("tbody");
+    body.innerHTML = result.rows.map(r =>
+      "<tr><td>" + r.rate + "</td><td>" + fmt(r.asked) + "</td><td>" + r.formula.toFixed(1) +
+      "</td><td>" + (r.rendered === null ? "silent" : r.rendered.toFixed(1)) + "</td><td>" +
+      r.python.toFixed(1) + "</td><td>" + r.offBy.toFixed(2) + " Hz</td></tr>").join("");
+    el("selfcheck-json").textContent = JSON.stringify(result);
+  }
+
+  // ---- go ---------------------------------------------------------------------------------
+  fillOrderTable();
+  refresh();
+  selfCheck().then(showCheck).catch(error => {
+    el("selfcheck").className = "num fail";
+    el("selfcheck").textContent = "FAIL. the self check threw: " + error.message;
+    el("selfcheck-json").textContent = JSON.stringify({ ok: false, errors: [String(error)] });
+  });
+})();
+</script>
+</body>
+</html>
