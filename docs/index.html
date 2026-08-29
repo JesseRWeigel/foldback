@@ -809,14 +809,26 @@ const FOLDBACK = (function () {
     const bins = F.magnitudes(scope);
     let biggest = 1e-12;
     for (let i = 0; i < bins.length; i++) biggest = Math.max(biggest, bins[i]);
-    ctx.beginPath();
-    ctx.strokeStyle = s.cool; ctx.lineWidth = 2;
-    for (let i = 0; i < bins.length; i++) {
-      const db = 20 * Math.log10(Math.max(bins[i], 1e-9) / biggest);
-      const px = padL + (i / (bins.length - 1)) * (w - padL - padR);
-      if (i === 0) ctx.moveTo(px, y(db)); else ctx.lineTo(px, y(db));
+
+    // NOTHING HAS PLAYED YET IS NOT THE SAME AS SILENCE, and an earlier draft of this page could
+    // not tell them apart. The scope buffer starts full of zeros, every bin is then normalised
+    // against a floor rather than against a signal, and the result is a flat line along the very
+    // top of the plot that reads as full scale noise at every frequency. Worse, the caption under
+    // it said the sine was being sampled on its zero crossings, which is the explanation for a
+    // degenerate frequency and had nothing to do with the reason the buffer was empty. So the
+    // curve is drawn only once there is something in the buffer, and the caption below says which
+    // of the two situations this is.
+    const live = biggest > 1e-9;
+    if (live) {
+      ctx.beginPath();
+      ctx.strokeStyle = s.cool; ctx.lineWidth = 2;
+      for (let i = 0; i < bins.length; i++) {
+        const db = 20 * Math.log10(Math.max(bins[i], 1e-9) / biggest);
+        const px = padL + (i / (bins.length - 1)) * (w - padL - padR);
+        if (i === 0) ctx.moveTo(px, y(db)); else ctx.lineTo(px, y(db));
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
 
     const predicted = F.aliasOf(settings.frequency, sampleRate);
     ctx.strokeStyle = s.hot; ctx.setLineDash([7, 6]); ctx.lineWidth = 2;
@@ -829,10 +841,18 @@ const FOLDBACK = (function () {
       ctx.beginPath(); ctx.arc(x(measured), padT + 14, 7, 0, 2 * Math.PI); ctx.fill();
     }
     ctx.fillStyle = s.dim; ctx.textAlign = "left";
-    ctx.fillText(measured === null
-      ? "nothing above the noise floor: the sine is sampled on its zero crossings"
-      : "arithmetic says " + predicted.toFixed(1) + " Hz, the transform says " +
-        measured.toFixed(1) + " Hz", padL + 8, h - padB - 12);
+    let caption;
+    if (!live) {
+      caption = "press Play: nothing has been through the sampler yet";
+    } else if (measured === null) {
+      caption = "silence: this frequency is a whole multiple of half your sample rate, so the "
+              + "sine is caught exactly on its zero crossings";
+    } else {
+      caption = "arithmetic says " + predicted.toFixed(1) + " Hz, the transform says "
+              + measured.toFixed(1) + " Hz";
+    }
+    ctx.fillText(caption, padL + 8, h - padB - 12);
+    el("spectrum").dataset.caption = caption;
   }
 
   function drawFoldMap() {

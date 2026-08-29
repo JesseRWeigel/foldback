@@ -120,6 +120,21 @@ class WhatThePageSaysAboutItself(unittest.TestCase):
         self.assertNotIn("overflow-x:hidden", text)
         self.assertIn("overflow-x: auto", text, "wide tables should scroll in their own box")
 
+    def test_it_does_not_explain_an_empty_buffer_as_a_degenerate_frequency(self):
+        """An earlier draft had one message for both, which was wrong before Play was pressed.
+
+        The scope buffer starts full of zeros. Normalising that against its own maximum draws a
+        flat line along the top of the plot, and the caption underneath said the sine was being
+        sampled on its zero crossings, which is the explanation for a degenerate frequency and had
+        nothing to do with an empty buffer. `scripts/browser_check.py` asserts the caption at page
+        load, and this is the cheap text version of the same check.
+        """
+        for path in (SOURCE, PUBLISHED):
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("press Play: nothing has been through the sampler yet", text)
+            self.assertIn("const live = biggest > 1e-9;", text)
+            self.assertNotIn("nothing above the noise floor", text)
+
     def test_the_self_check_writes_its_result_somewhere_a_harness_can_read_it(self):
         text = SOURCE.read_text(encoding="utf-8")
         self.assertIn('id="selfcheck-json"', text)

@@ -100,6 +100,7 @@ READOUTS = r"""
       }),
     checkRows: document.getElementById('checktable')
                  .querySelectorAll('tbody tr').length,
+    caption: document.getElementById('spectrum').dataset.caption || null,
     verdict: text('selfcheck')
   };
 })()
@@ -250,6 +251,18 @@ def drive_the_controls(chrome, report):
     report.require(before["verdict"].startswith("PASS"),
                    f"the page's verdict line reads {before['verdict']!r}")
 
+    # NOTHING HAS PLAYED YET, so the spectrum caption has to say so. An earlier draft normalised
+    # an all zero scope buffer against its own maximum, drew a flat line along the top of the plot
+    # that read as full scale noise, and captioned it with the explanation for a degenerate
+    # frequency. Both halves of that are checked here, because a page that lies before the reader
+    # touches anything is the worst place to lie.
+    report.require(before["caption"] is not None,
+                   "the spectrum canvas published no caption, so the draw never ran")
+    report.require(before["caption"].startswith("press Play"),
+                   f"before any audio the spectrum says {before['caption']!r}")
+    report.require("zero crossings" not in (before["caption"] or ""),
+                   "the page explains an empty buffer as a degenerate frequency")
+
     for multiple in (0.5, 1.4, 2.6, 3.7):
         asked = round(multiple * rate / 2.0)
         chrome.evaluate(
@@ -258,6 +271,9 @@ def drive_the_controls(chrome, report):
             expect_title=TITLE)
         now = chrome.evaluate(READOUTS, expect_title=TITLE)
         expected = fold.alias_of(asked, rate)
+        report.require(now["caption"].startswith("press Play"),
+                       f"still no audio, and at {asked} Hz the spectrum says "
+                       f"{now['caption']!r}")
         report.require(now["asked"] == asked,
                        f"the slider was set to {asked} and the page shows {now['asked']}")
         report.require(abs(now["heard"] - expected) < 0.2,

@@ -88,7 +88,7 @@ nothing here has been shown to run in one.
 The pieces, each of which runs on its own:
 
 ```bash
-python3 -m unittest discover -s tests -t .   # 126 unit tests
+python3 -m unittest discover -s tests -t .   # 127 unit tests
 python3 scripts/parity.py                    # the page's JavaScript against the Python
 python3 scripts/browser_check.py             # the published page in real headless Chrome
 python3 scripts/check_independent.py         # the closed forms, importing nothing from the package
@@ -156,8 +156,8 @@ the transform conjugates it, and a real signal's conjugate spectrum has exactly 
 magnitudes, so a measurement of magnitudes alone could not see it and neither could a comparison
 between the two languages that only looked at magnitudes. Both now carry the complex transform.
 
-**Three claims in the prose turned out to be wrong when they were measured.** They are listed
-under Unfinished, along with what they say now.
+**Five claims turned out to be wrong when they were measured**, four in prose and one in the page
+itself. They are listed below, along with what they say now.
 
 ## What the measurements corrected
 
@@ -182,6 +182,15 @@ rather than quietly leaving them out.
 the six decibels an octave rule instead of measured. The table is now a dict a test reads back
 against a fresh measurement, and the prose version of it is read back too.
 
+**The page could not tell an empty buffer from silence.** Before Play is pressed the scope buffer
+is full of zeros, and the spectrum was normalising that against its own maximum, which drew a flat
+line along the very top of the plot that reads as full scale noise at every frequency. The caption
+under it said the sine was being sampled on its zero crossings, which is the explanation for a
+degenerate frequency and had nothing to do with why the buffer was empty. The curve is now drawn
+only once there is something to draw, and the caption has three cases: nothing has played, this
+frequency really is silent, or here is where the peak landed. `scripts/browser_check.py` reads the
+caption at page load and requires the first of the three.
+
 **The silence at Nyquist is a knife edge and not a fade.** A test was written assuming the level
 faded towards the boundary. It does not. One hertz below Nyquist a sine still reaches full
 amplitude, because what you are looking at is a beat at the difference frequency and the window
@@ -202,7 +211,7 @@ VERIFY PASSED: foldback
 ## Unfinished
 
 **What is covered by tests, and what is not.** The arithmetic is: the fold, the transform, the
-filter and the sampler are all in Python with 126 unit tests on them, and the page's JavaScript
+filter and the sampler are all in Python with 127 unit tests on them, and the page's JavaScript
 copy of the same formulas is compared against that Python value by value. The page's numbers are
 checked in a real browser, and so is its layout at four widths, its canvases having drawn
 anything at all, and the frequency slider, filter button and order menu changing what it prints.
