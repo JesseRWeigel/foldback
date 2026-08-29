@@ -36,8 +36,14 @@ class OneFileAndNothingElse(unittest.TestCase):
                 for match in re.finditer(rf'\b{attribute}\s*=\s*"([^"]*)"', text):
                     self.assertFalse(match.group(1).strip(),
                                      f"{path.name} fetches {match.group(1)}")
-            for match in re.finditer(r'<link[^>]*\bhref\s*=\s*"([^"]*)"', text):
-                self.fail(f"{path.name} has a link element pointing at {match.group(1)}")
+            links = re.findall(r'<link[^>]*\bhref\s*=\s*"([^"]*)"', text)
+            self.assertEqual(len(links), 1, f"{path.name} has {len(links)} link elements")
+            for href in links:
+                # The favicon is an inline SVG data URI. Without one the browser asks for
+                # /favicon.ico, gets a 404, and the console error is real even though the page
+                # never wrote it.
+                self.assertTrue(href.startswith("data:image/svg+xml,"),
+                                f"{path.name} links out to {href[:60]}")
             self.assertNotIn("@import", text)
             self.assertNotIn("fonts.googleapis", text)
             self.assertNotIn("cdn.", text)
