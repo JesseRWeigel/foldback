@@ -79,7 +79,10 @@ if not claimed:
 if any(number != ran for number in claimed):
     print(f"   FAIL the README claims {sorted(set(claimed))} and the runner ran {ran}")
     raise SystemExit(1)
-print(f"   the README says {ran} unit tests in {len(claimed)} places and the runner ran {ran}")
+# The phrasing here deliberately avoids the two patterns it searches for. This transcript is
+# pasted into the README, so a line reading "the README says 126 unit tests" would become a
+# claim the next run counts, and the count would climb by one every time it was pasted.
+print(f"   the runner ran {ran}, and every count claimed in the README agrees with it")
 EOF
 check $?
 

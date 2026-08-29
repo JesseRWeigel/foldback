@@ -325,13 +325,26 @@ def check_layout(chrome, report):
     chrome.evaluate("(window.dispatchEvent(new Event('resize')), true)", expect_title=TITLE)
 
 
+FLOOR = 2000
+
+
 def check_drawing(chrome, report, where):
+    """Both canvases have to have drawn something, and the count is not printed.
+
+    The exact number of coloured pixels moves by a few hundred between runs, because the spectrum
+    is drawn from whatever the audio callback last handed over and that depends on timing. This
+    transcript is pasted into the README and compared against a fresh run, so a figure that moves
+    would mean the two could never converge. The threshold is the claim, and the exact count
+    appears only when it fails, which is when it is worth having.
+    """
     ink = chrome.evaluate(INK, expect_title=TITLE)
-    for name, count in sorted(ink.items()):
-        report.require(count > 2000,
-                       f"{where}: the {name} canvas has {count} coloured pixels, which is a "
+    low = [name for name, count in sorted(ink.items()) if count <= FLOOR]
+    for name in low:
+        report.require(False,
+                       f"{where}: the {name} canvas has {ink[name]} coloured pixels, which is a "
                        f"canvas that did not draw")
-    report.note(f"{where}: spectrum {ink['spectrum']} pixels, fold map {ink['foldmap']} pixels")
+    if not low:
+        report.note(f"{where}: both canvases drew, each over {FLOOR} coloured pixels")
 
 
 def console_messages(chrome):

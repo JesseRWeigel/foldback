@@ -127,13 +127,11 @@ def main() -> int:
                         f"to mean anything. Before the first commit it tracks none and every "
                         f"check below passes without opening a file.")
 
-    scanned_bytes = 0
     for path in files:
         if not path.exists():
             problems.append(f"{path.relative_to(ROOT)} is tracked and not on disk")
             continue
         raw = path.read_bytes()
-        scanned_bytes += len(raw)
         if b"\0" in raw:
             problems.append(f"{path.relative_to(ROOT)} contains a NUL byte, which makes git and "
                             f"grep treat it as binary and skip it. Write it as the two character "
@@ -145,7 +143,12 @@ def main() -> int:
             problems.append(f"{path.relative_to(ROOT)} contains this machine's home directory")
         if len(ACCOUNT) > 2 and re.search(r"/home/" + re.escape(ACCOUNT) + r"\b", text):
             problems.append(f"{path.relative_to(ROOT)} contains this machine's account name")
-    print(f"scanned {len(files)} tracked files, {scanned_bytes} bytes, none of them binary to git")
+    # The BYTE TOTAL is deliberately not printed. This scan's output is pasted into the README,
+    # and a total that includes the README's own length changes the moment it is pasted, so the
+    # loop that converges the two would never terminate. The file count is the claim that matters
+    # and it is checked against a floor above.
+    print(f"scanned {len(files)} tracked files, none of them binary to git, "
+          f"{sum(1 for f in files if f.exists() and f.stat().st_size == 0)} of them empty")
 
     with tempfile.TemporaryDirectory() as area:
         planted = pathlib.Path(area)
