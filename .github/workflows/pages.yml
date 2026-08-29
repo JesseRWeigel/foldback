@@ -1,0 +1,59 @@
+name: Publish the page
+
+# `pages-${{ github.run_id }}` and never a shared group name. One wedged run holds a shared lock
+# for every later deploy, and a wedged run cannot always be cancelled.
+concurrency:
+  group: pages-${{ github.run_id }}
+  cancel-in-progress: false
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The page is generated from the Python that the tests exercise, so a published page that
+      # nobody rebuilt would quietly carry stale numbers. This rebuilds and refuses to publish if
+      # what is committed is not what a fresh build produces.
+      - name: The published page is a fresh build
+        run: python3 scripts/build_page.py --check
+
+      - name: Unit tests
+        run: python3 -W ignore::ResourceWarning -m unittest discover -s tests -t .
+
+      - name: The page's javascript against the tested python
+        run: python3 scripts/parity.py
+
+      - name: Independent recomputation
+        run: python3 scripts/check_independent.py
+
+      - name: Privacy scan
+        run: python3 scripts/privacy_scan.py
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

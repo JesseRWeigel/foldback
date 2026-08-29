@@ -18,6 +18,12 @@ measurements, so anything that scales both cancels out of them. Dropping the win
 gain from `dft.amplitude_at` is exactly that kind of change, and it would be invisible here
 without a line that reports an amplitude on its own.
 
+THE PAGE'S JAVASCRIPT IS IN HERE TOO, and that is not decoration. The deliverable a reader opens
+runs JavaScript, so a sabotage that changes only the page would move nothing in a measurement of
+the Python alone, gate two would fail, and the honest looking conclusion would be that the page
+cannot be attacked. It can. The core block is extracted from `page/index.html` and run under node,
+and its answers are part of this block.
+
 NOTHING IN THIS OUTPUT NAMES THIS MACHINE. No working directory, no home directory, no time, no
 process id. `scripts/verify.sh` checks that, because a fingerprint that folds in its own path
 passes gate two for free and the whole sabotage run is then void.
@@ -31,7 +37,9 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
 
+import pagecore  # noqa: E402
 from foldback import biquad, dft, fold, reference, sampler  # noqa: E402
 
 RATES = (44100.0, 48000.0)
@@ -156,6 +164,22 @@ def report_absolute_amplitudes():
                  f"at={alias:.4f} value={amplitude:.9f}")
 
 
+def report_the_transform():
+    line("# the transform itself, COMPLEX, and not only the magnitudes taken from it")
+    # A sign flip in the twiddle factor computes the conjugate transform, and for a real input
+    # the conjugate has exactly the same magnitudes. So a block that reported only magnitudes
+    # could not see that change at all, and a sabotage that reverses the transform would look
+    # inert while `tests/test_dft.py` catches it immediately by comparing complex values. The
+    # measurement was widened rather than the sabotage removed.
+    import math
+    n = 64
+    values = [math.sin(2.0 * math.pi * 5.0 * i / n) + 0.4 * math.cos(2.0 * math.pi * 11.0 * i / n)
+              for i in range(n)]
+    spectrum = dft.fft(values)
+    for i in (0, 1, 5, 11, 17, 32, 53, 59, 63):
+        line(f"transform bin={i} re={spectrum[i].real:.9f} im={spectrum[i].imag:.9f}")
+
+
 def report_the_edges():
     line("# how well the peak finder does near the two ends, where its own mirror overlaps it")
     rate, n = 48000.0, 4096
@@ -180,6 +204,71 @@ def report_the_reference_block():
              f"frequency={row['frequency']:.6f} alias={row['alias']:.6f} db={row['db']:.6f}")
 
 
+JAVASCRIPT_DRIVER = r"""
+const out = [];
+for (const rate of [44100, 48000]) {
+  for (const m of [0.05, 0.5, 0.98, 1.0, 1.25, 1.5, 2.0, 2.6, 3.0, 3.7, 5.3, 7.1, 7.9]) {
+    const f = m * rate / 2;
+    out.push("js fold rate=" + rate + " mult=" + m.toFixed(2)
+             + " alias=" + FOLDBACK.aliasOf(f, rate).toFixed(6)
+             + " folds=" + FOLDBACK.foldsBelow(f, rate)
+             + " degenerate=" + (FOLDBACK.isDegenerate(f, rate) ? 1 : 0));
+  }
+}
+for (const order of [2, 4, 6, 8]) {
+  out.push("js poleqs order=" + order + " qs="
+           + FOLDBACK.butterworthQs(order).map(q => q.toFixed(9)).join(" "));
+  const c = FOLDBACK.makeCascade(order, 0.9 * 44100 / 2, 44100 * 8);
+  out.push("js response order=" + order + " db="
+           + [0.5, 0.98, 1.0, 1.5, 2.5, 3.4, 4.0]
+               .map(m => FOLDBACK.cascadeResponseDb(c, m * 44100 / 2).toFixed(6)).join(" "));
+}
+for (const rate of [44100, 48000]) {
+  for (const m of [0.5, 1.4, 2.6, 3.7]) {
+    for (const filterOn of [false, true]) {
+      const state = FOLDBACK.makeSampler({
+        sampleRate: rate, frequency: m * rate / 2, amplitude: 1,
+        filterOn: filterOn, order: 4, cutoffFraction: 0.9, oversample: 8 });
+      const warm = new Float64Array(8192);
+      FOLDBACK.render(state, warm, warm.length);
+      const block = new Float64Array(8192);
+      FOLDBACK.render(state, block, block.length);
+      const peak = FOLDBACK.peakOf(block, rate);
+      const alias = FOLDBACK.aliasOf(m * rate / 2, rate);
+      let sum = 0;
+      for (let i = 0; i < block.length; i++) sum += Math.abs(block[i]);
+      out.push("js sampled rate=" + rate + " mult=" + m.toFixed(2)
+               + " filter=" + (filterOn ? 1 : 0)
+               + " peak=" + (peak === null ? "silent" : peak.toFixed(6))
+               + " sumabs=" + sum.toFixed(6)
+               + " amplitude=" + FOLDBACK.amplitudeAt(block, rate, alias).toFixed(9));
+    }
+  }
+}
+{
+  const n = 64;
+  const re = new Float64Array(n), im = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    re[i] = Math.sin(2 * Math.PI * 5 * i / n) + 0.4 * Math.cos(2 * Math.PI * 11 * i / n);
+  }
+  FOLDBACK.fft(re, im);
+  for (const i of [0, 1, 5, 11, 17, 32, 53, 59, 63]) {
+    out.push("js transform bin=" + i + " re=" + re[i].toFixed(9) + " im=" + im[i].toFixed(9));
+  }
+}
+process.stdout.write(out.join("\n") + "\n");
+"""
+
+
+def report_the_page_javascript():
+    line("# the same questions, answered by the javascript the page actually ships")
+    try:
+        printed = pagecore.run(JAVASCRIPT_DRIVER)
+    except pagecore.NoNode as missing:
+        raise SystemExit(str(missing))
+    sys.stdout.write(printed)
+
+
 def main() -> int:
     digest = hashlib.sha256()
 
@@ -200,8 +289,10 @@ def main() -> int:
         report_the_filter()
         report_the_toggle()
         report_absolute_amplitudes()
+        report_the_transform()
         report_the_edges()
         report_the_reference_block()
+        report_the_page_javascript()
     finally:
         sys.stdout = sys.__stdout__
     # On stderr on purpose, so a caller can capture the report and the fingerprint separately.

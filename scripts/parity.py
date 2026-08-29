@@ -34,20 +34,14 @@ from __future__ import annotations
 import json
 import math
 import pathlib
-import re
-import shutil
-import subprocess
 import sys
-import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
 
+import pagecore  # noqa: E402
 from foldback import biquad, dft, fold, sampler  # noqa: E402
-
-PAGE = ROOT / "page" / "index.html"
-BEGIN = "// === FOLDBACK CORE BEGIN ==="
-END = "// === FOLDBACK CORE END ==="
 
 RATES = (44100.0, 48000.0)
 SWEEP = tuple(i * 0.05 for i in range(1, 159))     # 0.05 to 7.90 times Nyquist
@@ -65,29 +59,12 @@ LIMITS = {
     "coefficients": 1e-15,  # sin and cos, measured at 0
     "response": 1e-12,      # a chain of the above, measured at 2.6e-14
     "samples": 1e-12,       # sin once per internal step, measured at 1.6e-15
+    "transform": 1e-12,     # the COMPLEX transform, not only its magnitudes
     "window": 1e-15,        # cos, measured at 5.6e-17
     "spectrum": 1e-9,       # a transform of a windowed sine, relative, measured at 2.2e-16
     "peak": 1e-6,           # hertz, after an interpolation on logarithms, measured at 0
     "amplitude": 1e-12,     # measured at 6.7e-16
 }
-
-
-def core_source() -> str:
-    text = PAGE.read_text(encoding="utf-8")
-    if text.count(BEGIN) != 1 or text.count(END) != 1:
-        raise SystemExit(f"{PAGE.name} must contain exactly one core block, "
-                         f"found {text.count(BEGIN)} begin and {text.count(END)} end markers")
-    body = text.split(BEGIN, 1)[1].split(END, 1)[0]
-    # Comments are stripped before this search, because the block's own header says in prose that
-    # it must never touch `document` or `window`, and a search over the raw text finds that
-    # sentence and refuses the file for saying the right thing.
-    code = re.sub(r"//[^\n]*", "", re.sub(r"/\*.*?\*/", "", body, flags=re.DOTALL))
-    for forbidden in ("document.", "window.", "location.", "navigator.", "self.",
-                      "getElementById", "requestAnimationFrame"):
-        if forbidden in code:
-            raise SystemExit(f"the core block uses {forbidden}, so an AudioWorklet running it "
-                             f"would throw, and the page and this check would diverge")
-    return BEGIN + body + END
 
 
 DRIVER = r"""
@@ -97,7 +74,7 @@ const ORDERS = %ORDERS%;
 const CORNERS = %CORNERS%;
 
 const out = { alias: [], poleqs: {}, coefficients: [], response: [], samples: [],
-              window: null, spectrum: [], peak: [], amplitude: [] };
+              window: null, spectrum: [], transform: null, peak: [], amplitude: [] };
 
 for (const rate of RATES) {
   for (const multiple of SWEEP) {
@@ -141,6 +118,21 @@ for (const rate of RATES) {
 
 out.window = Array.from(FOLDBACK.hann(64));
 
+// The COMPLEX transform, and not only the magnitudes taken from it. Reversing the direction of
+// the transform conjugates it, and a real signal's conjugate spectrum has exactly the same
+// magnitudes, so a comparison of magnitudes alone cannot see that change at all. The sabotage
+// suite found this gap by making the page's transform run backwards and watching every check
+// pass.
+{
+  const n = 64;
+  const re = new Float64Array(n), im = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    re[i] = Math.sin(2 * Math.PI * 5 * i / n) + 0.4 * Math.cos(2 * Math.PI * 11 * i / n);
+  }
+  FOLDBACK.fft(re, im);
+  out.transform = { re: Array.from(re), im: Array.from(im) };
+}
+
 {
   const n = 1024, rate = 44100;
   const values = new Float64Array(n);
@@ -169,26 +161,16 @@ process.stdout.write(JSON.stringify(out));
 """
 
 
-def run_node(source: str):
-    node = shutil.which("node")
-    if node is None:
-        raise SystemExit(
-            "node is not on the path, and this check runs the page's own JavaScript.\n"
-            "Install it with: apt-get install nodejs   (or: nvm install 24)\n"
-            "Without it the Python is still covered by tests/, and the page's copy of the same "
-            "formulas is NOT compared against it, which is the one thing this step is for.")
+def run_node():
     driver = (DRIVER
               .replace("%RATES%", json.dumps(list(RATES)))
               .replace("%SWEEP%", json.dumps(list(SWEEP)))
               .replace("%ORDERS%", json.dumps(list(ORDERS)))
               .replace("%CORNERS%", json.dumps(list(CORNERS))))
-    with tempfile.TemporaryDirectory() as area:
-        path = pathlib.Path(area) / "parity.mjs"
-        path.write_text(source + "\n" + driver, encoding="utf-8")
-        done = subprocess.run([node, str(path)], capture_output=True, text=True, timeout=600)
-    if done.returncode != 0:
-        raise SystemExit(f"node exited {done.returncode}:\n{done.stderr[-2000:]}")
-    return json.loads(done.stdout)
+    try:
+        return json.loads(pagecore.run(driver))
+    except pagecore.NoNode as missing:
+        raise SystemExit(str(missing))
 
 
 class Comparison:
@@ -205,8 +187,7 @@ class Comparison:
 
 
 def main() -> int:
-    source = core_source()
-    js = run_node(source)
+    js = run_node()
     c = Comparison()
 
     for rate, multiple, alias, folds, degenerate in js["alias"]:
@@ -243,6 +224,13 @@ def main() -> int:
     for i, (left, right) in enumerate(zip(dft.hann(64), js["window"])):
         c.check("window", left, right, f"hann {i}")
 
+    n = 64
+    signal = [math.sin(2.0 * math.pi * 5.0 * i / n) + 0.4 * math.cos(2.0 * math.pi * 11.0 * i / n)
+              for i in range(n)]
+    for i, value in enumerate(dft.fft(signal)):
+        c.check("transform", value.real, js["transform"]["re"][i], f"bin {i} real part")
+        c.check("transform", value.imag, js["transform"]["im"][i], f"bin {i} imaginary part")
+
     n, rate = 1024, 44100.0
     values = [math.sin(2.0 * math.pi * 7000.0 * i / rate)
               + 0.3 * math.sin(2.0 * math.pi * 15000.0 * i / rate) for i in range(n)]
@@ -268,6 +256,7 @@ def main() -> int:
     compared = (len(js["alias"]) * 3 + sum(len(v) for v in js["poleqs"].values())
                 + len(js["coefficients"]) * 5 + len(js["response"])
                 + sum(len(row[3]) for row in js["samples"]) + len(js["window"])
+                + len(js["transform"]["re"]) * 2
                 + len(js["spectrum"]) + len(js["peak"]) + len(js["amplitude"]))
     print(f"{compared} values compared between the page's JavaScript and the tested Python")
     for what in sorted(c.worst):
