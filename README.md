@@ -12,7 +12,8 @@ back down. The spectrum plot shows where it landed, the fold map shows the zigza
 get there, and a button puts an anti-alias filter in front of the sampler so you can hear what
 that changes and read how many decibels it bought.
 
-The page is at [`docs/index.html`](docs/index.html). Open it from a disk or serve it, both work.
+It is live at https://jesserweigel.github.io/foldback/ and in this repository at
+[`docs/index.html`](docs/index.html). Open it from a disk or serve it, both work.
 No libraries, no CDN, no web fonts, no network of any kind. Web Audio and about a thousand lines
 of JavaScript.
 
@@ -200,12 +201,130 @@ than the window. The silence at a degenerate frequency has no width at all, whic
 
 ## Status
 
+`bash scripts/verify.sh`, pasted from a real run:
+
 ```
 == 1. python, node and a browser, and the standard library only
    python 3.12.3, node v24.13.0, Google Chrome 145.0.7632.45, standard library only
    PASS
 
-VERIFY PASSED: foldback
+== 2. unit tests
+   Ran 127 tests
+   OK
+   PASS
+
+== 3. the test count the README claims is the count that exists
+   the runner ran 127, and every count claimed in the README agrees with it
+   PASS
+
+== 4. the alias arithmetic, over a sweep wide enough for the tolerance to mean something
+   1264 frequencies across 2 sample rates, up to 7.90 times Nyquist, 1106 of them above it, 14 of them exactly on a fold boundary
+   the tight bound is 0.05 of a bin, loosened to 0.5 within 2.0 bins of an end of the spectrum
+   PASS
+
+== 5. the filter toggle, in decibels, at every order the page offers
+   1.5 x Nyquist:    -9.7 dB   -18.5 dB   -27.6 dB   -36.8 dB
+   2.5 x Nyquist:   -19.1 dB   -38.1 dB   -57.1 dB   -76.2 dB
+   3.4 x Nyquist:   -25.8 dB   -51.6 dB   -77.4 dB  -103.2 dB
+   orders 2, 4, 6 and 8, at 44100 Hz with the corner at 0.9 of Nyquist
+   PASS
+
+== 6. the page's own javascript against the tested python, value by value
+   18305 values compared between the page's JavaScript and the tested Python
+     alias         worst 0.000e+00 at 44100 x 0.05, limit 1e-09
+     amplitude     worst 6.661e-16 at 44100 x 5.3, limit 1e-12
+     coefficients  worst 0.000e+00 at corner 0.8 order 2 b0, limit 1e-15
+     degenerate    worst 0.000e+00 at 44100 x 0.05, limit 0e+00
+     folds         worst 0.000e+00 at 44100 x 0.05, limit 0e+00
+     peak          worst 0.000e+00 at 44100 x 0.3, limit 1e-06
+     poleqs        worst 0.000e+00 at order 2 pole 0, limit 1e-15
+     response      worst 2.576e-14 at corner 0.95 order 8 at 1 x Nyquist, limit 1e-12
+     samples       worst 1.610e-15 at 48000 x 0.5 filter 1 sample 563, limit 1e-12
+     spectrum      worst 2.220e-16 at bin 163, limit 1e-09
+     transform     worst 4.441e-16 at bin 27 real part, limit 1e-12
+     window        worst 5.551e-17 at hann 57, limit 1e-15
+   the page and the tests are running the same arithmetic
+   PASS
+
+== 7. the published page is what a fresh build produces
+   docs/index.html matches a fresh build, 46541 characters
+   PASS
+
+== 8. the page in real headless chrome, on both audio engines
+     Google Chrome 145.0.7632.45
+     AudioWorklet: 14 frequencies rendered, worst peak 0.081 Hz from the formula, 6 filter 
+   measurements from -51.6 to -9.7 dB, 6 degenerate frequencies silent
+     the toggle at 81585 Hz: 'nothing is filtered' becomes 'this tone is cut by -55.8 dB before 
+   sampling'
+     order 2, 4, 6, 8 at that tone: -27.9 dB, -55.8 dB, -83.6 dB, -111.5 dB
+     over http: both canvases drew, each over 2000 coloured pixels
+     console warning, not a failure: warning: Canvas2D: Multiple readback operations using 
+   getImageData are faster with the willReadFrequently attribute set to true. See: 
+   https://html.spec.whatwg.
+     console warning, not a failure: warning: Canvas2D: Multiple readback operations using 
+   getImageData are faster with the willReadFrequently attribute set to true. See: 
+   https://html.spec.whatwg.
+     ScriptProcessorNode: 14 frequencies rendered, worst peak 0.081 Hz from the formula, 6 filter 
+   measurements from -51.6 to -9.7 dB, 6 degenerate frequencies silent
+     from a file url: both canvases drew, each over 2000 coloured pixels
+   the page runs in a real browser on both audio engines, and its numbers agree with the tested 
+   Python
+   PASS
+
+== 9. the measurement is deterministic and does not track the working directory
+   FINGERPRINT 4496f093d7390e0c574aeae118cda8df934f75b223f7a7d8767f1d4df5bc04c6
+   identical across two runs here and from an untouched copy under another name
+   PASS
+
+== 10. the measurement carries nothing belonging to this machine
+   231 lines of measurement, none of them this machine's
+   PASS
+
+== 11. independent recomputation, importing nothing from the package
+   independence: this file's import graph reaches nothing inside the package
+   the fold: 46 frequencies land inside the band, are unchanged by a whole sample rate, and mirror 
+   about every multiple of it
+   the published page: 20 alias rows, worst disagreement 0.000e+00 Hz
+   the samples themselves: 18 tones located by a naive scan and a golden section search, worst 
+   0.0027 Hz off, which is 0.0003 of a bin
+   the boundaries: 8 multiples of Nyquist sample to silence, as a zero phase sine on its own zero 
+   crossings must
+   the filter: 6 attenuation figures re-derived from the analog Butterworth magnitude, worst 
+   disagreement 0.0000 dB
+   the cost: a corner below Nyquist takes real signal off the top of the band, confirmed from the 
+   same closed form
+   the shipped javascript: aliasOf is Math.abs(f - Math.round(f / fs) * fs)
+   every headline number re-derived a second way agrees with the published page
+   PASS
+
+== 12. the independent checker refuses every dependent probe
+   7 probes that reach the package refused, including one through a helper and one through a name built at runtime
+   2 probes accepted, one of which names the package in a comment and in a string, which is what separates this from a grep
+   PASS
+
+== 13. privacy scan with planted positive controls and clean negative controls
+   scanned 41 tracked files, none of them binary to git, 1 of them empty
+   positive controls: 10 planted credentials, every one found
+   negative controls: 5 of 5 alarming looking files correctly left alone
+   the NUL detector found a planted NUL byte, so its silence above means something
+   nothing private, nothing credential shaped, and the scanner is shown to work
+   PASS
+
+== 14. sabotage suite, three gates and a null control
+   null control: an untouched copy under another name fingerprints 4496f093d7390e0c
+   33 of 33 sabotages caught (1 dormant), null control held
+   caught by: tests 26, parity 30, independent 4, browser 13
+   PASS
+
+== 15. the README is finished and carries this script's own success line
+   7 sections, 0 problem(s)
+   PASS
+
+== 16. verify did not modify the tree it was verifying
+   the tree is byte identical to before this ran
+   PASS
+
+VERIFY PASSED: foldback, 16 of 16 steps
 ```
 
 ## Unfinished
