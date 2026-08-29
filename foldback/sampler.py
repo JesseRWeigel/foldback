@@ -13,9 +13,17 @@ stands in for "continuous", the filter runs there, and every `oversample`-th fil
 kept. The reader can then hear both:
 
   FILTER OFF. Every internal sample is thrown away except the first of each frame, so the output
-  is exactly `amplitude * sin(2*pi*f*n/fs + phase)`, which is the naive oscillator every beginner
-  writes and the one that folds. Bit for bit the same as computing that expression directly, which
-  `tests/test_sampler.py` checks rather than asserting in a comment.
+  is `amplitude * sin(2*pi*f*n/fs + phase)`, which is the naive oscillator every beginner writes
+  and the one that folds.
+
+  IT IS NOT BIT FOR BIT THE SAME as evaluating that expression directly, and the first draft of
+  this file said it was. Measured at 44100 Hz on a tone at 1.5 times Nyquist over 4096 samples,
+  2049 of the values match exactly and the largest disagreement is 8.3e-12. The cause is that the
+  phase here is ACCUMULATED, one addition per internal step, so its rounding error grows with n,
+  where `sin(2*pi*f*n/fs)` rounds once. The accumulator is what an audio callback has to do, since
+  it is handed one block at a time and has to pick up where the last one stopped, and the wrap in
+  `render` is what stops that error from growing without bound. `tests/test_sampler.py` pins the
+  bound at 1e-9 rather than at zero, which is the claim that survives being measured.
 
   FILTER ON. The tone is attenuated at its TRUE frequency before it is ever sampled, so what folds
   down is what is left of it, and above the corner that is very little.

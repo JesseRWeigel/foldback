@@ -14,10 +14,28 @@ resolution nobody here needs.
 
 THE INTERPOLATION IS ON THE LOGARITHM, ON PURPOSE. Fitting a parabola through the magnitudes of
 the three bins around the maximum is the usual trick, and on a Hann window it is biased, because
-the main lobe is not a parabola in linear magnitude. In decibels it very nearly is. The error
-after this correction is under a hundredth of a bin for a tone anywhere inside a bin, which is
-what lets `tests/test_alias_physics.py` demand agreement to a fraction of a bin rather than to a
-whole one.
+the main lobe is not a parabola in linear magnitude. In decibels it very nearly is. Measured by
+`tests/test_dft.py` by walking a tone across a full bin in two hundred steps at 48000 Hz over
+4096 samples, the worst error after this correction is 0.016 of a bin, at an offset of 0.29 of a
+bin from a centre. That is what lets `tests/test_alias_physics.py` demand agreement to a small
+fraction of a bin rather than to a whole one.
+
+An earlier draft of this paragraph said "under a hundredth of a bin". It was written from the
+literature rather than from this implementation, and measuring it is what corrected it.
+
+IT IS ONLY THAT GOOD AWAY FROM THE TWO ENDS, and the reason is the same overlapping image that
+`amplitude_at` refuses outright. A real signal's spectrum is mirrored about zero and about half
+the sample rate, and within about a bin of either end the tone sits on top of its own mirror
+image, which drags the three bin fit sideways. Measured, at 4096 samples:
+
+    inside 1.0 bin of an end    the answer is off by about half a bin, which is useless
+    at 1.5 bins from an end     0.023 of a bin
+    at 2.5 bins and beyond      0.005 of a bin, falling fast
+
+So this returns the bin it found, without pretending, and the callers that care state a distance
+from the ends. `tests/test_dft.py` pins all three of those numbers, and
+`tests/test_alias_physics.py` splits its frequencies on the two bin line rather than quietly
+leaving out the ones that would fail.
 
 A PEAK IS NOT ALWAYS THERE. A signal of all zeros has no loudest frequency, and this returns None
 rather than an arbitrary bin, because the frequencies where a sine samples to silence are exactly
